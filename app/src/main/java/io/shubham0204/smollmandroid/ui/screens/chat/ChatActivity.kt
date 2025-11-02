@@ -20,14 +20,19 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
+import androidx.core.content.ContextCompat
 import android.text.Spanned
 import android.util.Log
 import android.widget.Toast
+import android.Manifest
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -102,11 +107,15 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Menu
+import compose.icons.FeatherIcons
+import compose.icons.feathericons.Mic
 import compose.icons.feathericons.MoreVertical
 import compose.icons.feathericons.Send
 import compose.icons.feathericons.StopCircle
 import compose.icons.feathericons.User
 import io.shubham0204.smollmandroid.R
+import io.shubham0204.smollmandroid.TextToSpeechManager
+import io.shubham0204.smollmandroid.VoiceInputManager
 import io.shubham0204.smollmandroid.data.Chat
 import io.shubham0204.smollmandroid.data.Task
 import io.shubham0204.smollmandroid.ui.components.AppBarTitleText
@@ -131,6 +140,8 @@ private val LOGD: (String) -> Unit = { Log.d(LOGTAG, it) }
 class ChatActivity : ComponentActivity() {
     private val viewModel: ChatScreenViewModel by inject()
     private var modelUnloaded = false
+    private lateinit var voiceInputManager: VoiceInputManager
+    private lateinit var ttsManager: TextToSpeechManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -161,6 +172,9 @@ class ChatActivity : ComponentActivity() {
             }
         }
 
+        voiceInputManager = VoiceInputManager(this)
+        ttsManager = TextToSpeechManager(this)
+
         setContent {
             val navController = rememberNavController()
             Box(modifier = Modifier.safeDrawingPadding()) {
@@ -180,6 +194,8 @@ class ChatActivity : ComponentActivity() {
                         ChatActivityScreenUI(
                             viewModel,
                             onEditChatParamsClick = { navController.navigate("edit-chat") },
+                            voiceInputManager = voiceInputManager,
+                            ttsManager = ttsManager
                         )
                     }
                 }
@@ -205,6 +221,11 @@ class ChatActivity : ComponentActivity() {
         modelUnloaded = viewModel.unloadModel()
         LOGD("onStop() called - model unloaded result: $modelUnloaded")
     }
+
+    override fun onDestroy() {
+        ttsManager.shutdown()
+        super.onDestroy()
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -212,11 +233,26 @@ class ChatActivity : ComponentActivity() {
 fun ChatActivityScreenUI(
     viewModel: ChatScreenViewModel,
     onEditChatParamsClick: () -> Unit,
+    voiceInputManager: VoiceInputManager,
+    ttsManager: TextToSpeechManager,
 ) {
     val context = LocalContext.current
     val currChat by viewModel.currChatState.collectAsStateWithLifecycle(lifecycleOwner = LocalLifecycleOwner.current)
+    val requiredPermission by viewModel.requiredPermission.collectAsStateWithLifecycle()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        viewModel.onPermissionResult(isGranted)
+    }
+
+    LaunchedEffect(requiredPermission) {
+        if (requiredPermission != null) {
+            permissionLauncher.launch(requiredPermission)
+        }
+    }
+
     LaunchedEffect(currChat) { viewModel.loadModel() }
     SmolLMAndroidTheme {
         ModalNavigationDrawer(
@@ -314,7 +350,7 @@ fun ChatActivityScreenUI(
                             .background(MaterialTheme.colorScheme.surface),
                 ) {
                     if (currChat != null) {
-                        ScreenUI(viewModel, currChat!!)
+                        ScreenUI(viewModel, currChat!!, voiceInputManager, ttsManager)
                     }
                 }
             }
@@ -331,6 +367,8 @@ fun ChatActivityScreenUI(
 private fun ColumnScope.ScreenUI(
     viewModel: ChatScreenViewModel,
     currChat: Chat,
+    voiceInputManager: VoiceInputManager,
+    ttsManager: TextToSpeechManager,
 ) {
     val isGeneratingResponse by viewModel.isGeneratingResponse.collectAsStateWithLifecycle()
     RAMUsageLabel(viewModel)
@@ -343,6 +381,8 @@ private fun ColumnScope.ScreenUI(
     MessageInput(
         viewModel,
         isGeneratingResponse,
+        voiceInputManager,
+        ttsManager
     )
 }
 
@@ -650,16 +690,41 @@ private fun LazyItemScope.MessageListItem(
 private fun MessageInput(
     viewModel: ChatScreenViewModel,
     isGeneratingResponse: Boolean,
+    voiceInputManager: VoiceInputManager,
+    ttsManager: TextToSpeechManager,
 ) {
     val currChat by viewModel.currChatState.collectAsStateWithLifecycle()
     val modelLoadingState by viewModel.modelLoadState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    var questionText by remember { mutableStateOf(viewModel.questionTextDefaultVal ?: "") }
+
+    val launcher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        if (isGranted) {
+            voiceInputManager.startListening(
+                onResult = { text ->
+                    questionText = text
+                    viewModel.sendUserQuery(text) { response ->
+                        ttsManager.speak(response)
+                    }
+                    questionText = ""
+                },
+                onPartialResult = { partial ->
+                    questionText = partial
+                }
+            )
+        } else {
+            // Handle permission denial
+        }
+    }
+
     if ((currChat?.llmModelId ?: -1L) == -1L) {
         Text(
             modifier = Modifier.padding(8.dp),
             text = stringResource(R.string.chat_select_model),
         )
     } else {
-        var questionText by remember { mutableStateOf(viewModel.questionTextDefaultVal ?: "") }
         val keyboardController = LocalSoftwareKeyboardController.current
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -685,35 +750,35 @@ private fun MessageInput(
                 ) {
                     TextField(
                         modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .weight(1f),
+                        Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
                         value = questionText,
                         onValueChange = { questionText = it },
                         shape = RoundedCornerShape(16.dp),
                         colors =
-                            TextFieldDefaults.colors(
-                                disabledTextColor = Color.Transparent,
-                                focusedIndicatorColor = Color.Transparent,
-                                unfocusedIndicatorColor = Color.Transparent,
-                                disabledIndicatorColor = Color.Transparent,
-                            ),
+                        TextFieldDefaults.colors(
+                            disabledTextColor = Color.Transparent,
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent,
+                            disabledIndicatorColor = Color.Transparent,
+                        ),
                         placeholder = {
                             Text(
                                 text = stringResource(R.string.chat_ask_question),
                             )
                         },
                         keyboardOptions =
-                            KeyboardOptions.Default.copy(
-                                capitalization = KeyboardCapitalization.Sentences,
-                                imeAction = ImeAction.Go,
-                            ),
+                        KeyboardOptions.Default.copy(
+                            capitalization = KeyboardCapitalization.Sentences,
+                            imeAction = ImeAction.Go,
+                        ),
                         keyboardActions =
-                            KeyboardActions(onGo = {
-                                keyboardController?.hide()
-                                viewModel.sendUserQuery(questionText)
-                                questionText = ""
-                            }),
+                        KeyboardActions(onGo = {
+                            keyboardController?.hide()
+                            viewModel.sendUserQuery(questionText)
+                            questionText = ""
+                        }),
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     if (isGeneratingResponse) {
@@ -727,13 +792,15 @@ private fun MessageInput(
                         IconButton(
                             enabled = questionText.isNotEmpty(),
                             modifier =
-                                Modifier.background(
-                                    MaterialTheme.colorScheme.primaryContainer,
-                                    CircleShape,
-                                ),
+                            Modifier.background(
+                                MaterialTheme.colorScheme.primaryContainer,
+                                CircleShape,
+                            ),
                             onClick = {
                                 keyboardController?.hide()
-                                viewModel.sendUserQuery(questionText)
+                                viewModel.sendUserQuery(questionText) { response ->
+                                    ttsManager.speak(response)
+                                }
                                 questionText = ""
                             },
                         ) {
@@ -741,6 +808,42 @@ private fun MessageInput(
                                 imageVector = FeatherIcons.Send,
                                 contentDescription = "Send text",
                                 tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        IconButton(
+                            modifier =
+                            Modifier.background(
+                                MaterialTheme.colorScheme.secondaryContainer,
+                                CircleShape,
+                            ),
+                            onClick = {
+                                if (ContextCompat.checkSelfPermission(
+                                        context,
+                                        Manifest.permission.RECORD_AUDIO
+                                    ) == PackageManager.PERMISSION_GRANTED
+                                ) {
+                                    voiceInputManager.startListening(
+                                        onResult = { text ->
+                                            questionText = text
+                                            viewModel.sendUserQuery(text) { response ->
+                                                ttsManager.speak(response)
+                                            }
+                                            questionText = ""
+                                        },
+                                        onPartialResult = { partial ->
+                                            questionText = partial
+                                        }
+                                    )
+                                } else {
+                                    launcher.launch(Manifest.permission.RECORD_AUDIO)
+                                }
+                            },
+                        ) {
+                            Icon(
+                                imageVector = FeatherIcons.Mic,
+                                contentDescription = "Voice input",
+                                tint = MaterialTheme.colorScheme.onSecondaryContainer,
                             )
                         }
                     }

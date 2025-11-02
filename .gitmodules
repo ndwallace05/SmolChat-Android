@@ -1,3 +1,6 @@
 [submodule "llama.cpp"]
 	path = llama.cpp
 	url = https://github.com/ggerganov/llama.cpp
+[submodule "libs/mcp-sdk"]
+	path = libs/mcp-sdk
+	url = https://github.com/kaeawc/android-mcp-sdk.git

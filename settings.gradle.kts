@@ -27,3 +27,9 @@ rootProject.name = "SmolChat Android"
 include(":app")
 include(":smollm")
 include(":hf-model-hub-api")
+
+includeBuild("libs/mcp-sdk") {
+    dependencySubstitution {
+        substitute(module("dev.jasonpearson:mcp-android-sdk")).using(project(":core"))
+    }
+}
