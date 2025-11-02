@@ -23,10 +23,10 @@ jobs:
           cache: gradle
 
       - name: Android SDK Tools
-        uses: Xmaxer/setup-android@v1.0
+        uses: Xmaxer/setup-android@f44b094798016da331256f8ca2b19f8af15be1cf # v1.0.0
 
       - name: Setup Android NDK >=23
-        uses: anoop-b/setup-ndk@v1
+        uses: anoop-b/setup-ndk@8c3b609ff4d54576ea420551943fd34b4d03b0dc # v1
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
