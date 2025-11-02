@@ -17,7 +17,7 @@ class AndroidIntentHandler(private val context: Context) {
 
     private fun handlePhoneCall(response: String) {
         val phoneNumber = extractPhoneNumber(response)
-        val intent = Intent(Intent.ACTION_CALL).apply {
+        val intent = Intent(Intent.ACTION_DIAL).apply {
             data = Uri.parse("tel:$phoneNumber")
         }
         context.startActivity(intent)
@@ -35,7 +35,9 @@ class AndroidIntentHandler(private val context: Context) {
     private fun handleAppLaunch(response: String) {
         val packageName = response.substringAfter("open:").trim()
         val intent = context.packageManager.getLaunchIntentForPackage(packageName)
-        context.startActivity(intent)
+        if (intent != null) {
+            context.startActivity(intent)
+        }
     }
 
     private fun handleSettings(response: String) {

@@ -126,6 +126,11 @@ class ChatScreenViewModel(
     private val _showRAMUsageLabel = MutableStateFlow(false)
     val showRAMUsageLabel: StateFlow<Boolean> = _showRAMUsageLabel
 
+    private val _requiredPermission = MutableStateFlow<String?>(null)
+    val requiredPermission: StateFlow<String?> = _requiredPermission
+
+    private var lastCommand: String? = null
+
     // Used to pre-set a value in the query text-field of the chat screen
     // It is set when a query comes from a 'share-text' intent in ChatActivity
     var questionTextDefaultVal: String? = null
@@ -264,7 +269,11 @@ class ChatScreenViewModel(
                         intentHandler.processAndExecute(response.response)
                     }
                     if (response.response.contains("mcp:")) {
-                        mcpChatIntegration.processMCPCommand(response.response)
+                        val result = mcpChatIntegration.processMCPCommand(response.response)
+                        if (result.startsWith("PERMISSION_REQUIRED:")) {
+                            lastCommand = response.response
+                            _requiredPermission.value = result.substringAfter(":")
+                        }
                     }
                     onResponse(response.response)
                 },
@@ -438,5 +447,15 @@ class ChatScreenViewModel(
 
     fun toggleRAMUsageLabelVisibility() {
         _showRAMUsageLabel.value = !_showRAMUsageLabel.value
+    }
+
+    fun onPermissionResult(isGranted: Boolean) {
+        if (isGranted) {
+            lastCommand?.let {
+                mcpChatIntegration.processMCPCommand(it)
+            }
+        }
+        _requiredPermission.value = null
+        lastCommand = null
     }
 }

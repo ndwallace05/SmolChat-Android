@@ -1,9 +1,12 @@
 package io.shubham0204.smollmandroid
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.speech.RecognitionListener
+import androidx.core.content.ContextCompat
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 
@@ -17,6 +20,15 @@ class VoiceInputManager(private val context: Context) {
     }
 
     fun startListening(onResult: (String) -> Unit, onPartialResult: (String) -> Unit) {
+        if (ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.RECORD_AUDIO
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            // Handle the case where permission is not granted.
+            // For example, you can show a toast message.
+            return
+        }
         speechRecognizer.setRecognitionListener(object : RecognitionListener {
             override fun onResults(results: Bundle?) {
                 val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
@@ -29,7 +41,14 @@ class VoiceInputManager(private val context: Context) {
             }
 
             override fun onError(error: Int) {
-                // Handle errors
+                // Log the error
+                android.util.Log.e("VoiceInputManager", "Speech recognition error: $error")
+                // Optionally notify the user
+                android.widget.Toast.makeText(
+                    context,
+                    "Speech recognition error occurred (code: $error)",
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
             }
 
             override fun onReadyForSpeech(params: Bundle?) {}

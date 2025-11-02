@@ -1,9 +1,12 @@
 package io.shubham0204.smollmandroid
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.ContactsContract
+import androidx.core.content.ContextCompat
 import dev.jasonpearson.mcp.mcp_tool.MCPTool
 import java.io.File
 
@@ -66,8 +69,12 @@ class MCPChatIntegration(private val context: Context) {
 
     private fun launchApp(packageName: String): String {
         val intent = context.packageManager.getLaunchIntentForPackage(packageName)
-        context.startActivity(intent)
-        return "Launched $packageName"
+        return if (intent != null) {
+            context.startActivity(intent)
+            "Launched $packageName"
+        } else {
+            "App not found: $packageName"
+        }
     }
 
     private fun sendSMS(params: Map<String, Any>): String {
@@ -82,11 +89,11 @@ class MCPChatIntegration(private val context: Context) {
     }
 
     private fun makeCall(number: String): String {
-        val intent = Intent(Intent.ACTION_CALL).apply {
+        val intent = Intent(Intent.ACTION_DIAL).apply {
             data = Uri.parse("tel:$number")
         }
         context.startActivity(intent)
-        return "Calling $number"
+        return "Dialing $number"
     }
 
     private fun readFile(path: String): String {
@@ -98,6 +105,14 @@ class MCPChatIntegration(private val context: Context) {
     }
 
     private fun searchContact(name: String): String {
+        if (ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.READ_CONTACTS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            return "PERMISSION_REQUIRED:${Manifest.permission.READ_CONTACTS}"
+        }
+
         val cursor = context.contentResolver.query(
             ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
             null,
@@ -108,8 +123,10 @@ class MCPChatIntegration(private val context: Context) {
         val contacts = mutableListOf<String>()
         cursor?.use {
             while (it.moveToNext()) {
-                val contactName = it.getString(it.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME))
-                val phoneNumber = it.getString(it.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.NUMBER))
+                val contactName =
+                    it.getString(it.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME))
+                val phoneNumber =
+                    it.getString(it.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.NUMBER))
                 contacts.add("$contactName: $phoneNumber")
             }
         }
@@ -120,7 +137,7 @@ class MCPChatIntegration(private val context: Context) {
         }
     }
 
-    fun processMCPCommand(command: String) {
+    fun processMCPCommand(command: String): String {
         // This is a simplified approach. A more robust solution would involve a proper command parser.
         val parts = command.split(":")
         val toolName = parts[1].trim()
@@ -135,9 +152,13 @@ class MCPChatIntegration(private val context: Context) {
             toolParams["action"] = action
             if (params != null) {
                 // This is a very basic parameter parser. A real implementation would be more complex.
-                toolParams[tool.parameters.keys.last()] = params
+                val paramName = tool.parameters.keys.firstOrNull { it != "action" }
+                if (paramName != null) {
+                    toolParams[paramName] = params
+                }
             }
-            tool.execute(toolParams)
+            return tool.execute(toolParams) as String
         }
+        return "Unknown command"
     }
 }

@@ -25,4 +25,8 @@ class TextToSpeechManager(context: Context) : TextToSpeech.OnInitListener {
             tts.speak(text, TextToSpeech.QUEUE_FLUSH, null)
         }
     }
+
+    fun shutdown() {
+        tts.shutdown()
+    }
 }
