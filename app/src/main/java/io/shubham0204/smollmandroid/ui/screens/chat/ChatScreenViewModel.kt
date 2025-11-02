@@ -38,6 +38,8 @@ import io.noties.markwon.syntax.Prism4jThemeDarkula
 import io.noties.markwon.syntax.SyntaxHighlightPlugin
 import io.noties.prism4j.Prism4j
 import io.shubham0204.smollm.SmolLM
+import io.shubham0204.smollmandroid.AndroidIntentHandler
+import io.shubham0204.smollmandroid.MCPChatIntegration
 import io.shubham0204.smollmandroid.R
 import io.shubham0204.smollmandroid.data.AppDB
 import io.shubham0204.smollmandroid.data.Chat
@@ -134,6 +136,8 @@ class ChatScreenViewModel(
     var responseGenerationsSpeed: Float? = null
     var responseGenerationTimeSecs: Int? = null
     val markwon: Markwon
+    private val intentHandler = AndroidIntentHandler(context)
+    private val mcpChatIntegration = MCPChatIntegration(context)
 
     private var activityManager: ActivityManager
 
@@ -220,6 +224,7 @@ class ChatScreenViewModel(
     fun sendUserQuery(
         query: String,
         addMessageToDB: Boolean = true,
+        onResponse: (String) -> Unit = {}
     ) {
         _currChatState.value?.let { chat ->
             // Update the 'dateUsed' attribute of the current Chat instance
@@ -255,6 +260,13 @@ class ChatScreenViewModel(
                     responseGenerationsSpeed = response.generationSpeed
                     responseGenerationTimeSecs = response.generationTimeSecs
                     appDB.updateChat(chat.copy(contextSizeConsumed = response.contextLengthUsed))
+                    if (response.response.contains("call:") || response.response.contains("intent:")) {
+                        intentHandler.processAndExecute(response.response)
+                    }
+                    if (response.response.contains("mcp:")) {
+                        mcpChatIntegration.processMCPCommand(response.response)
+                    }
+                    onResponse(response.response)
                 },
                 onCancelled = {
                     // ignore CancellationException, as it was called because

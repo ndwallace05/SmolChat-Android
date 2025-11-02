@@ -102,11 +102,15 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Menu
+import compose.icons.FeatherIcons
+import compose.icons.feathericons.Mic
 import compose.icons.feathericons.MoreVertical
 import compose.icons.feathericons.Send
 import compose.icons.feathericons.StopCircle
 import compose.icons.feathericons.User
 import io.shubham0204.smollmandroid.R
+import io.shubham0204.smollmandroid.TextToSpeechManager
+import io.shubham0204.smollmandroid.VoiceInputManager
 import io.shubham0204.smollmandroid.data.Chat
 import io.shubham0204.smollmandroid.data.Task
 import io.shubham0204.smollmandroid.ui.components.AppBarTitleText
@@ -131,6 +135,8 @@ private val LOGD: (String) -> Unit = { Log.d(LOGTAG, it) }
 class ChatActivity : ComponentActivity() {
     private val viewModel: ChatScreenViewModel by inject()
     private var modelUnloaded = false
+    private lateinit var voiceInputManager: VoiceInputManager
+    private lateinit var ttsManager: TextToSpeechManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -161,6 +167,9 @@ class ChatActivity : ComponentActivity() {
             }
         }
 
+        voiceInputManager = VoiceInputManager(this)
+        ttsManager = TextToSpeechManager(this)
+
         setContent {
             val navController = rememberNavController()
             Box(modifier = Modifier.safeDrawingPadding()) {
@@ -180,6 +189,8 @@ class ChatActivity : ComponentActivity() {
                         ChatActivityScreenUI(
                             viewModel,
                             onEditChatParamsClick = { navController.navigate("edit-chat") },
+                            voiceInputManager = voiceInputManager,
+                            ttsManager = ttsManager
                         )
                     }
                 }
@@ -212,6 +223,8 @@ class ChatActivity : ComponentActivity() {
 fun ChatActivityScreenUI(
     viewModel: ChatScreenViewModel,
     onEditChatParamsClick: () -> Unit,
+    voiceInputManager: VoiceInputManager,
+    ttsManager: TextToSpeechManager,
 ) {
     val context = LocalContext.current
     val currChat by viewModel.currChatState.collectAsStateWithLifecycle(lifecycleOwner = LocalLifecycleOwner.current)
@@ -314,7 +327,7 @@ fun ChatActivityScreenUI(
                             .background(MaterialTheme.colorScheme.surface),
                 ) {
                     if (currChat != null) {
-                        ScreenUI(viewModel, currChat!!)
+                        ScreenUI(viewModel, currChat!!, voiceInputManager, ttsManager)
                     }
                 }
             }
@@ -331,6 +344,8 @@ fun ChatActivityScreenUI(
 private fun ColumnScope.ScreenUI(
     viewModel: ChatScreenViewModel,
     currChat: Chat,
+    voiceInputManager: VoiceInputManager,
+    ttsManager: TextToSpeechManager,
 ) {
     val isGeneratingResponse by viewModel.isGeneratingResponse.collectAsStateWithLifecycle()
     RAMUsageLabel(viewModel)
@@ -343,6 +358,8 @@ private fun ColumnScope.ScreenUI(
     MessageInput(
         viewModel,
         isGeneratingResponse,
+        voiceInputManager,
+        ttsManager
     )
 }
 
@@ -650,6 +667,8 @@ private fun LazyItemScope.MessageListItem(
 private fun MessageInput(
     viewModel: ChatScreenViewModel,
     isGeneratingResponse: Boolean,
+    voiceInputManager: VoiceInputManager,
+    ttsManager: TextToSpeechManager,
 ) {
     val currChat by viewModel.currChatState.collectAsStateWithLifecycle()
     val modelLoadingState by viewModel.modelLoadState.collectAsStateWithLifecycle()
@@ -727,13 +746,15 @@ private fun MessageInput(
                         IconButton(
                             enabled = questionText.isNotEmpty(),
                             modifier =
-                                Modifier.background(
-                                    MaterialTheme.colorScheme.primaryContainer,
-                                    CircleShape,
-                                ),
+                            Modifier.background(
+                                MaterialTheme.colorScheme.primaryContainer,
+                                CircleShape,
+                            ),
                             onClick = {
                                 keyboardController?.hide()
-                                viewModel.sendUserQuery(questionText)
+                                viewModel.sendUserQuery(questionText) { response ->
+                                    ttsManager.speak(response)
+                                }
                                 questionText = ""
                             },
                         ) {
@@ -741,6 +762,34 @@ private fun MessageInput(
                                 imageVector = FeatherIcons.Send,
                                 contentDescription = "Send text",
                                 tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        IconButton(
+                            modifier =
+                            Modifier.background(
+                                MaterialTheme.colorScheme.secondaryContainer,
+                                CircleShape,
+                            ),
+                            onClick = {
+                                voiceInputManager.startListening(
+                                    onResult = { text ->
+                                        questionText = text
+                                        viewModel.sendUserQuery(text) { response ->
+                                            ttsManager.speak(response)
+                                        }
+                                        questionText = ""
+                                    },
+                                    onPartialResult = { partial ->
+                                        questionText = partial
+                                    }
+                                )
+                            },
+                        ) {
+                            Icon(
+                                imageVector = FeatherIcons.Mic,
+                                contentDescription = "Voice input",
+                                tint = MaterialTheme.colorScheme.onSecondaryContainer,
                             )
                         }
                     }
