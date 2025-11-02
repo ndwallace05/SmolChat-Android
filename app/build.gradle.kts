@@ -131,5 +131,5 @@ dependencies {
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
-    debugImplementation("com.github.kaeawc:android-mcp-sdk:0670ec17d78ec2f2cd785ba6b977b2f0596e3640")
+    debugImplementation("dev.jasonpearson:mcp-android-sdk:1.0.0")
 }
