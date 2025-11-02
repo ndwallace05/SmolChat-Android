@@ -11,6 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
+      with:
+        submodules: 'true'
     - name: set up JDK 17
       uses: actions/setup-java@v3
       with:
@@ -18,11 +20,26 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+
+    - name: Setup Android NDK
+      uses: nttld/setup-ndk@v1
+      id: setup-ndk
+      with:
+        ndk-version: r27c
+        add-to-path: true
+      env:
+        ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
     - name: Build with Gradle
-  run: ./gradlew build --stacktrace --info
+      run: ./gradlew assembleDebug --stacktrace --info
+
+    - name: Verify APK existence
+      run: test -f app/build/outputs/apk/debug/app-debug.apk
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
